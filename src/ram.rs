@@ -1,68 +1,45 @@
 pub struct RAM {
-    data: Vec<u8>,
-    size: usize,
-    curr_addr: usize,
+    segments: Vec<Vec<u64>>,
+    free_segs: Vec<usize>
 }
 
 impl RAM{
-    pub fn new(size: usize) -> Self{
-        let mut buffer = vec![0; size as usize];
+    pub fn new() -> Self{
         RAM{
-            data: buffer,
-            size,
-            curr_addr: 0
+            segments: Vec::new(),
+            free_segs: Vec::new()
         }
     }
 
-    // pub fn read_by_bytes(&self, addr: usize) -> [u8; 4] {
-    //     if !self.check_in_bounds(addr){
-    //         panic!("Attempted to read outside of ram!");
-    //     }
-    //
-    //     let w1 = ((self.data[addr] & (((1 << 8) - 1) << 24)) >> 24) as u8;
-    //     let w2 = ((self.data[addr] & (((1 << 8) - 1) << 16)) >> 16) as u8;
-    //     let w3 = ((self.data[addr] & (((1 << 8) - 1) << 8)) >> 8) as u8;
-    //     let w4 = (self.data[addr] & ((1 << 8) - 1)) as u8;
-    //     [w1, w2, w3, w4]
-    // }
+    pub fn request_segment(&mut self, size: usize) -> usize{
+        let data = vec![0u64; size];
 
-    pub fn read(&mut self, addr: usize) -> u8{
-        if !self.check_in_bounds(addr){
-            panic!("Attempted to read outside of ram!");
+        if !self.free_segs.is_empty(){
+            let id = self.free_segs.pop().unwrap();
+            self.segments[id] = data;
+            id
         }
-
-        self.curr_addr = addr;
-        self.data[addr]
-    }
-
-    pub fn read_next(&mut self) -> u8{
-        let buffer = self.data[self.curr_addr % self.size];
-        self.curr_addr += 1;
-        buffer
-    }
-
-    pub fn load_bytes(&mut self, addr: usize, words: Vec<u8>){
-        if !self.check_in_bounds(addr){
-            panic!("Attempted to load words outside of ram!");
-        }
-        for word in 0..words.len(){
-            self.data[addr + word] = words[word];
+        else {
+            let id = self.segments.len();
+            self.segments.push(data);
+            id
         }
     }
 
-    pub fn load(&mut self, addr: usize, word: u8){
-        if !self.check_in_bounds(addr) {
-            panic!("Attempted to load into invalid address!");
-        }
-
-        self.data[addr] = word;
+    pub fn release_segment(&mut self, seg_id: usize){
+        self.free_segs.push(seg_id);
+    }
+    
+    pub fn duplicate_segment(&mut self, from: usize, to: usize){
+        let buffer = self.segments[from].clone();
+        self.segments[to] = buffer;
     }
 
-    pub fn size(&self) -> usize{
-        self.size
+    pub fn get(&mut self, seg_id: usize, index: usize) -> u64{
+        self.segments[seg_id][index]
     }
-
-    fn check_in_bounds(&self, addr: usize) -> bool{
-        addr >= 0 && addr < self.size
+    
+    pub fn set(&mut self, seg_id: usize, index: usize, value: u64){
+        self.segments[seg_id][index] = value;
     }
 }

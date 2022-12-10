@@ -2,34 +2,38 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
 use std::path::Path;
+use crate::machine::Machine;
 
 pub struct HardDrive{
-    image: File
+    image: Vec<u8>,
+    size: usize
 }
 
 impl HardDrive{
 
     pub fn from_file(name: Option<&str>) -> Result<HardDrive, &str>{
-        let file = File::open(
+        let mut file = File::open(
             match name{
                 None => { "maindisk.wmiso" },
                 Some(filename) => {
                     filename
                 }
             }
-        );
-
-        match file {
-            Err(e) => {
-                Err("Could not open file!")
+        ).unwrap();
+        
+        
+        
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer).unwrap();
+        let size = buffer.len();
+        
+        //println!("{}", size);
+        Ok(
+            HardDrive{
+                image: buffer,
+                size
             }
-            Ok(file) => {
-                Ok(
-                HardDrive{
-                    image: file
-                }
-            )}
-        }
+        )
     }
 
     pub fn new(name: Option<&str>, size: usize) -> HardDrive{
@@ -53,13 +57,16 @@ impl HardDrive{
         file.write(&*buffer).expect("Could not write bytes!");
 
         HardDrive{
-            image: file
+            image: buffer,
+            size: 0
         }
+    }
+    
+    pub fn get_byte_length(&self) -> usize{
+        self.size
     }
 
     pub fn load_segment(&mut self, addr: usize, length: usize) -> Vec<u8>{
-        let mut buffer = vec![0u8; length];
-        let a = self.image.read_exact(&mut buffer);
-        buffer.to_vec()
+        (&self.image)[addr..(addr+length)].to_vec()
     }
 }
