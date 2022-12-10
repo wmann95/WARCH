@@ -15,9 +15,9 @@ WARCH also comes built with a disassembler. Use "./target/release/WARCH -d [FILE
 ### Instruction Set
 |   Opcode   | mnemonic | Name | Description |
 |   ------   | -------- | ---- | ----------- |
-| 0 | cmov | Conditional Move | if $r[c] != 0; $r[a] = $r[b] |
-| 1 | load | segmented Load | $r[a] = $m[$[rb][$r[c] |
-| 2 | store |Segmented Store | $m[$r[a]][$r[b]] = $r[c] |
+| 0 | cmov | Conditional Move | if $r[C] != 0; $r[A] = $r[B] |
+| 1 | load | segmented Load | $r[A] = $m[$r[B]][$r[C]] |
+| 2 | store |Segmented Store | $m[$r[A]][$r[B]] = $r[C] |
 | 3 | add | Add | $r[A] = ($r[B] + $r[C]) mod 2^32 |
 | 4 | mul | Multiply | $r[A] = ($r[B] * $r[C]) mod 2^32 |
 | 5 | div | Divide | $r[A] = ($r[B] / $r[C]) mod 2^32 |
