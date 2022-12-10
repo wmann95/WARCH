@@ -16,7 +16,7 @@ pub struct CPU{
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum Opcode { CMov, Load, Store, Add, Mul, Div, NAND, HALT, MapSeg, UnmapSeg, Out, In, LP, LV }
+pub enum Opcode { CMov, Load, Store, Add, Mul, Div, NAND, HALT, MapSeg, UnmapSeg, Out, In, LP, LV, INVALID }
 pub fn get_opcode(code: u32) -> Opcode{
     match code{
         0 => { Opcode::CMov },
@@ -34,7 +34,7 @@ pub fn get_opcode(code: u32) -> Opcode{
         12 => { Opcode::LP },
         13 => { Opcode::LV },
         n => {
-            panic!("Unknown instruction: {}", n);
+            Opcode::INVALID
         }
     }
 }
@@ -72,9 +72,6 @@ impl CPU{
             let instruction = machine.as_mut().unwrap().get_ram().get(0, self.program_counter as usize);
 
             self.compute(machine, instruction as u32);
-            // println!("{}", self.disassemble(instruction as u32));
-            //self.print_state();
-            // println!();
             
             if self.halt_flag{
                 break 'run
@@ -127,8 +124,11 @@ impl CPU{
         if op == Opcode::LV as u32 {
             format!("{:?} {} {}", get_opcode(op), rl, lval)
         }
-        else{
+        else if op != Opcode::INVALID as u32{
             format!("{:?} {} {} {}", get_opcode(op), ra, rb, rc)
+        }
+        else{
+            format!("Junk or invalid operation.")
         }
     }
 

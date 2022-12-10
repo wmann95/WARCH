@@ -7,7 +7,7 @@ pub struct Machine{
     cpu: CPU,
     ram: RAM,
     storage: Vec<HardDrive>,
-    screen: Option<Screen>
+    video_out: Vec<Vec<u64>>
 }
 
 impl Machine{
@@ -20,7 +20,7 @@ impl Machine{
             cpu,
             ram,
             storage,
-            screen: None,
+            video_out: vec![vec![0_u64; (800_usize * 600_usize)]]
         }
     }
     
@@ -36,17 +36,13 @@ impl Machine{
 
             let mut i = 0;
             for bytes in prog.chunks_exact_mut(4){
-                let word = ((bytes[0] as u32) << 24) |
-                    ((bytes[1] as u32) << 16) |
-                    ((bytes[2] as u32) << 8) |
-                    bytes[3] as u32;
-                //println!("{:b}", word);
+                let word = Self::get_instruction(bytes);
+                println!("{:x}: {:x}", i, word);
                 let dasm = self.cpu.disassemble(word);
                 println!("{dasm}");
-                i += 1;
+                i += 4;
             };
         }
-        
     }
     
     fn get_instruction(bytes: &mut [u8]) -> u32{
@@ -59,6 +55,14 @@ impl Machine{
     pub fn get_storage(&mut self) -> &mut Vec<HardDrive>{
         &mut self.storage
     }
+    
+    pub fn update_video_signal(&mut self, x: usize, y: usize, c: u64){
+        self.video_out[y][x] = c;
+    }
+
+    pub fn send_char(&mut self, x: usize, y: usize, c: u8){
+        
+    }
 
     pub fn boot(&mut self, input: Option<&str>) {
         
@@ -66,31 +70,24 @@ impl Machine{
         let t = self as *mut Machine;
         
         unsafe {
-            // set up m[0]
+            // set up the instructions that will go into m[0]
             let size = self.storage[0].get_byte_length().clone();
             let mut prog = self.storage[0].load_segment(0, size);
             
-            
+            // make the original segment m[0]
             self.cpu.lv_instruction(t, 0, (prog.len() / 4) as u32);
             self.cpu.instruction(t, Opcode::MapSeg, 0, 0, 0);
             
+            // load the instructions into m[0]
             let mut i = 0;
             for bytes in prog.chunks_exact_mut(4){
-                let word = ((bytes[0] as u32) << 24) |
-                    ((bytes[1] as u32) << 16) |
-                    ((bytes[2] as u32) << 8) |
-                    bytes[3] as u32;
-                //println!("{:b}", word);
+                let word = Self::get_instruction(bytes);
                 (*t).ram.set(0, i, word as u64);
                 i += 1;
             };
-
+            
             self.cpu.instruction(t, Opcode::LP, 0, 0, 0);
             self.cpu.run(t);
-            // 
-            // self.cpu.lv_instruction(t, 0, 1);
-            // self.cpu.instruction(t, Opcode::MapSeg, 0, 0, 0);
-            // self.cpu.print_state();
         }
     }
 }

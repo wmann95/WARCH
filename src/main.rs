@@ -1,3 +1,4 @@
+use std::thread;
 use std::time::Duration;
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -46,29 +47,37 @@ fn main() {
             machine.disassemble(file.as_deref());
         },
         false => {
+            
+            let screen_thread = thread::spawn( move || {
+                let sdl_context = sdl2::init().unwrap();
+
+                let mut screen = Screen::new(8, 6, 100, 100, 255, &sdl_context);
+
+                let mut event_pump = sdl_context.event_pump().unwrap();
+                'running: loop{
+                    for event in event_pump.poll_iter(){
+                        match event{
+                            Event::Quit {..} |
+                            Event::KeyDown { keycode: Some(Keycode::Escape), ..} => {
+                                
+                                break 'running
+                            },
+                            _ => {}
+                        }
+                    }
+
+                    screen.draw(Some(vec![vec![[0xba; 3]; 100]; 100]));
+
+                    std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 120));
+                }
+            });
+
             machine.boot(file.as_deref());
+            
+            screen_thread.join().unwrap();
         }
     }
     
-    // let sdl_context = sdl2::init().unwrap();
-    // 
-    // let mut screen = Screen::new(4, 3, 100, 100, 255, &sdl_context);
-    // 
-    // let mut event_pump = sdl_context.event_pump().unwrap();
-    // 'running: loop{
-    //     for event in event_pump.poll_iter(){
-    //         match event{
-    //             Event::Quit {..} |
-    //             Event::KeyDown { keycode: Some(Keycode::Escape), ..} => {
-    //                 break 'running
-    //             },
-    //             _ => {}
-    //         }
-    //     }
-    // 
-    //     screen.draw(Some(vec![vec![[0xba; 3]; 100]; 100]));
-    // 
-    //     std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 120));
-    // }
+    
 
 }
