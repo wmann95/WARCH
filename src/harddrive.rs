@@ -1,8 +1,5 @@
-use std::error::Error;
 use std::fs::File;
 use std::io::{Read, Write};
-use std::path::Path;
-use crate::machine::Machine;
 
 pub struct HardDrive{
     image: Vec<u8>,
@@ -49,7 +46,7 @@ impl HardDrive{
                 f
             }
             Err(e) => {
-                panic!("Could not create file!");
+                panic!("{}", e);
             }
         };
         let buffer = vec![0u8; size];

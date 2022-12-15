@@ -1,10 +1,8 @@
-use std::collections::HashMap;
 use std::io::{Read, stdin};
+use std::sync::mpsc::{Receiver};
 use std::thread::sleep;
 use std::time::Duration;
-use crate::harddrive::HardDrive;
 use crate::machine::Machine;
-use crate::ram::RAM;
 
 pub struct CPU{
     clock_speed: u64,
@@ -12,29 +10,30 @@ pub struct CPU{
     registers: Vec<u64>,
     program_counter: u64,
     stack: Vec<u64>,
-    halt_flag: bool
+    halt_flag: bool,
+    signalers: Vec<Receiver<u128>>
 }
 
 #[derive(Copy, Clone, Debug)]
-pub enum Opcode { CMov, Load, Store, Add, Mul, Div, NAND, HALT, MapSeg, UnmapSeg, Out, In, LP, LV, INVALID }
-pub fn get_opcode(code: u32) -> Opcode{
+pub enum CPU_Opcode { CMov, Load, Store, Add, Mul, Div, NAND, HALT, MapSeg, UnmapSeg, Out, In, LP, LV, INVALID }
+pub fn get_opcode(code: u32) -> CPU_Opcode {
     match code{
-        0 => { Opcode::CMov },
-        1 => { Opcode::Load },
-        2 => { Opcode::Store },
-        3 => { Opcode::Add },
-        4 => { Opcode::Mul },
-        5 => { Opcode::Div },
-        6 => { Opcode::NAND },
-        7 => { Opcode::HALT },
-        8 => { Opcode::MapSeg },
-        9 => { Opcode::UnmapSeg },
-        10 => { Opcode::Out },
-        11=> { Opcode::In },
-        12 => { Opcode::LP },
-        13 => { Opcode::LV },
-        n => {
-            Opcode::INVALID
+        0 => { CPU_Opcode::CMov },
+        1 => { CPU_Opcode::Load },
+        2 => { CPU_Opcode::Store },
+        3 => { CPU_Opcode::Add },
+        4 => { CPU_Opcode::Mul },
+        5 => { CPU_Opcode::Div },
+        6 => { CPU_Opcode::NAND },
+        7 => { CPU_Opcode::HALT },
+        8 => { CPU_Opcode::MapSeg },
+        9 => { CPU_Opcode::UnmapSeg },
+        10 => { CPU_Opcode::Out },
+        11=> { CPU_Opcode::In },
+        12 => { CPU_Opcode::LP },
+        13 => { CPU_Opcode::LV },
+        _ => {
+            CPU_Opcode::INVALID
         }
     }
 }
@@ -62,8 +61,13 @@ impl CPU{
             registers,
             stack,
             program_counter: 0,
-            halt_flag: false
+            halt_flag: false,
+            signalers: Vec::new()
         }
+    }
+    
+    pub fn add_signaler(&mut self, r: Receiver<u128>) {
+        self.signalers.push(r);
     }
     
     pub unsafe fn run(&mut self, machine: *mut Machine){
@@ -73,18 +77,34 @@ impl CPU{
 
             self.compute(machine, instruction as u32);
             
+            for signaler in &self.signalers{
+                
+                if let Ok(signal) = signaler.try_recv(){
+                    match signal{
+                        inst => {
+                            let op = get_opcode(get_bits(inst as u32, 4, 28));
+                            match op{
+                                CPU_Opcode::HALT => { break 'run; }
+                                _ => {}
+                            }
+                            
+                        }
+                    }
+                }
+            }
+            
             if self.halt_flag{
                 break 'run
             }
             
             self.program_counter += 1;
 
-            //sleep(Duration::from_millis(1000/self.clock_speed));
+            sleep(Duration::from_millis(1000/self.clock_speed));
         }
     }
 
-    pub fn build_instruction(&self, op: Opcode, ra: usize, rb: usize, rc: usize) -> u32{
-        if op as u32 > Opcode::LV as u32 ||
+    pub fn build_instruction(&self, op: CPU_Opcode, ra: usize, rb: usize, rc: usize) -> u32{
+        if op as u32 > CPU_Opcode::LV as u32 ||
             ra >= self.registers.len() ||
             rb >= self.registers.len() ||
             rc >= self.registers.len()
@@ -94,7 +114,7 @@ impl CPU{
         ((op as u32) << 28) | (ra << 6) as u32 | (rb << 3) as u32 | rc as u32
     }
     
-    pub unsafe fn instruction(&mut self, machine: *mut Machine, op: Opcode, ra: usize, rb: usize, rc: usize){
+    pub unsafe fn instruction(&mut self, machine: *mut Machine, op: CPU_Opcode, ra: usize, rb: usize, rc: usize){
         let inst = self.build_instruction(op, ra, rb, rc);
         self.compute(machine, inst);
     }
@@ -103,7 +123,7 @@ impl CPU{
         if !check_fits(lv as u64, 25){
             panic!("value won't fit into 25 bits!")
         }
-        ((Opcode::LV as u32) << 28) | (rl << 25) as u32 | (lv) as u32
+        ((CPU_Opcode::LV as u32) << 28) | (rl << 25) as u32 | (lv) as u32
     }
 
     pub unsafe fn lv_instruction(&mut self, machine: *mut Machine, rl: usize, lv: u32){
@@ -121,10 +141,10 @@ impl CPU{
         
         //println!("{:x}", instruction);
         
-        if op == Opcode::LV as u32 {
+        if op == CPU_Opcode::LV as u32 {
             format!("{:?} {} {}", get_opcode(op), rl, lval)
         }
-        else if op != Opcode::INVALID as u32{
+        else if op != CPU_Opcode::INVALID as u32{
             format!("{:?} {} {} {}", get_opcode(op), ra, rb, rc)
         }
         else{
@@ -142,46 +162,46 @@ impl CPU{
 
         match op{
             opcode =>{
-                if opcode == Opcode::CMov as u32{
+                if opcode == CPU_Opcode::CMov as u32{
                     self.cmov(ra, rb, rc);
                 }
-                else if opcode == Opcode::Load as u32{
+                else if opcode == CPU_Opcode::Load as u32{
                     self.load(machine, ra, rb, rc);
                 }
-                else if opcode == Opcode::Store as u32{
+                else if opcode == CPU_Opcode::Store as u32{
                     self.store(machine, ra, rb, rc);
                 }
-                else if opcode == Opcode::Add as u32{
+                else if opcode == CPU_Opcode::Add as u32{
                     self.add(ra, rb, rc);
                 }
-                else if opcode == Opcode::Mul as u32{
+                else if opcode == CPU_Opcode::Mul as u32{
                     self.mul(ra, rb, rc);
                 }
-                else if opcode == Opcode::Div as u32{
+                else if opcode == CPU_Opcode::Div as u32{
                     self.div(ra, rb, rc);
                 }
-                else if opcode == Opcode::NAND as u32{
+                else if opcode == CPU_Opcode::NAND as u32{
                     self.nand(ra, rb, rc);
                 }
-                else if opcode == Opcode::HALT as u32{
+                else if opcode == CPU_Opcode::HALT as u32{
                     self.halt();
                 }
-                else if opcode == Opcode::MapSeg as u32{
+                else if opcode == CPU_Opcode::MapSeg as u32{
                     self.map_seg(machine, rb, rc);
                 }
-                else if opcode == Opcode::UnmapSeg as u32{
+                else if opcode == CPU_Opcode::UnmapSeg as u32{
                     self.unmap_seg(machine, rc);
                 }
-                else if opcode == Opcode::Out as u32{
+                else if opcode == CPU_Opcode::Out as u32{
                     self.out(rc);
                 }
-                else if opcode == Opcode::In as u32{
+                else if opcode == CPU_Opcode::In as u32{
                     self.await_in(rc);
                 }
-                else if opcode == Opcode::LP as u32{
+                else if opcode == CPU_Opcode::LP as u32{
                     self.load_program(machine, rb, rc);
                 }
-                else if opcode == Opcode::LV as u32{
+                else if opcode == CPU_Opcode::LV as u32{
                     self.load_val(rl, lval as u64);
                 }
                 else{
@@ -238,7 +258,7 @@ impl CPU{
         self.registers[ra] = !(vb & vc);
     }
     
-    fn halt(&mut self){
+    pub fn halt(&mut self){
         self.halt_flag = true;
     }
     
@@ -298,6 +318,10 @@ impl CPU{
             println!("R[{}]: {}", i, self.registers[i] as i32)
         }
         println!("PC: {}", self.program_counter)
+    }
+    
+    pub fn interrupt(&mut self, _signal: u128){
+        
     }
 }
 
