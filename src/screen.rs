@@ -4,7 +4,6 @@ use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::{WindowCanvas};
 use sdl2::Sdl;
-use crate::gpu::GpuSignal;
 // use winit::dpi::LogicalSize;
 // use winit::event_loop::EventLoop;
 // use winit::window::{Window, WindowBuilder};
@@ -78,46 +77,46 @@ impl Screen{
         }
     }
 
-    pub fn draw(&mut self, signal: &Option<GpuSignal>) {
-        self.canvas.set_draw_color(self.clear_color);
-        self.canvas.clear();
-
-        match signal{
-            Some(s) => unsafe {
-                for y in 0..self.height as usize{
-                    for x in 0..self.width as usize{
-                        //println!("{} {}", x, y);
-                        
-                        self.canvas.set_draw_color(
-                            Color::RGB(
-                                (*s.signal).video_out[y][x][0],
-                                (*s.signal).video_out[y][x][1],
-                                (*s.signal).video_out[y][x][2],
-                            )
-                        );
-                        self.canvas.fill_rect(
-                            self.pixels[y][x]
-                        ).unwrap();
-                    }
-                }
-            }
-            None => { 
-                for y in 0..self.height as usize{
-                    for x in 0..self.width as usize{
-                        let red = self.rng.gen::<u8>();
-                        let green = self.rng.gen::<u8>();
-                        let blue = self.rng.gen::<u8>();
-    
-                        self.canvas.set_draw_color(Color::RGB(
-                            red, green, blue
-                        ));
-                        self.canvas.fill_rect(
-                            self.pixels[y][x]
-                        ).unwrap();
-                    } 
-                }
-            }
-        }
-        self.canvas.present();
-    }
+    // pub fn draw(&mut self, signal: &Option<GpuSignal>) {
+    //     self.canvas.set_draw_color(self.clear_color);
+    //     self.canvas.clear();
+    // 
+    //     match signal{
+    //         Some(s) => unsafe {
+    //             for y in 0..self.height as usize{
+    //                 for x in 0..self.width as usize{
+    //                     //println!("{} {}", x, y);
+    //                     
+    //                     self.canvas.set_draw_color(
+    //                         Color::RGB(
+    //                             (*s.signal).video_out[y][x][0],
+    //                             (*s.signal).video_out[y][x][1],
+    //                             (*s.signal).video_out[y][x][2],
+    //                         )
+    //                     );
+    //                     self.canvas.fill_rect(
+    //                         self.pixels[y][x]
+    //                     ).unwrap();
+    //                 }
+    //             }
+    //         }
+    //         None => { 
+    //             for y in 0..self.height as usize{
+    //                 for x in 0..self.width as usize{
+    //                     let red = self.rng.gen::<u8>();
+    //                     let green = self.rng.gen::<u8>();
+    //                     let blue = self.rng.gen::<u8>();
+    // 
+    //                     self.canvas.set_draw_color(Color::RGB(
+    //                         red, green, blue
+    //                     ));
+    //                     self.canvas.fill_rect(
+    //                         self.pixels[y][x]
+    //                     ).unwrap();
+    //                 } 
+    //             }
+    //         }
+    //     }
+    //     self.canvas.present();
+    // }
 }

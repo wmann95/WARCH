@@ -7,3 +7,4 @@ pub mod cpu;
 pub mod screen;
 pub mod gpu;
 pub mod display_data_helper;
+pub mod MachinePart;
