@@ -1,7 +1,7 @@
 # WARCH
 
 ## Description
-A rust implementation of an emulated computer. It currently has 14 instruction op-codes that can be used. Currently implemented as a hardcoded 32-bit system. This will be changed in the future in order to make system configuration possible.
+A rust implementation of an emulated computer. This is a fictional computer that is based on and build around the Universal Machin. It currently has 14 instruction op-codes that can be used, though this will be changed.
 
 ## Usage
 In order to use this, ensure your Rust is up-to-date and Cargo is functional. Clone the repository to a convenient location and run "cargo build -r" from the project folder.
