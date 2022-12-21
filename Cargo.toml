@@ -10,3 +10,5 @@ log = "0.4.17"
 rand = "0.8.5"
 sdl2 = "0.35.2"
 clap = {version = "4.0.29", features = ["derive"]}
+quanta = "0.10.1"
+crossbeam = "0.8.2"
