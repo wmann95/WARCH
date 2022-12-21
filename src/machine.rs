@@ -1,8 +1,9 @@
-use std::sync::mpsc::{Receiver, Sender};
+
 use std::thread;
+use crossbeam::channel::Sender;
 use sdl2::libc::system;
 use sdl2::mouse::SystemCursor::No;
-use crate::cpu::{CPU, CPU_Opcode};
+use crate::cpu::{CPU, CPU_Opcode, get_bits};
 use crate::gpu::{GPU};
 use crate::harddrive::HardDrive;
 use crate::MachinePart::MachinePart;
@@ -13,7 +14,7 @@ pub struct Machine{
     gpu: Option<GPU>,
     ram: Option<RAM>,
     storage: Vec<HardDrive>,
-    parts: Option<MachineWrapper>
+    parts: Option<MachineWrapper>,
 }
 
 pub struct MachineWrapper{
@@ -22,6 +23,12 @@ pub struct MachineWrapper{
     pub ram: *mut RAM,
     pub storage: *mut Vec<HardDrive>
 }
+
+pub struct VideoOutWrapper{
+    pub data: Vec<u64>
+}
+
+unsafe impl Send for VideoOutWrapper{}
 
 impl Machine{
 
@@ -61,23 +68,47 @@ impl Machine{
         let mut prog = self.storage[0].load_segment(0, size);
     
         let mut i = 0;
-        for bytes in prog.chunks_exact_mut(4){
-            let word = Self::get_instruction(bytes);
+        for bytes in prog.chunks_exact_mut(8){
+            let word = Self::get_32bit_instruction(bytes);
             println!("{:x}: {:x}", i, word);
             let dasm = self.cpu.as_mut().unwrap().disassemble(word);
             println!("{dasm}");
             i += 4;
         };
     }
-    
-    pub fn add_signaler(&mut self, r: Receiver<u128>) {
-        self.cpu.as_mut().unwrap().add_signaler(r);
-    }
-    
-    fn get_instruction(bytes: &mut [u8]) -> u32{
+
+    fn get_32bit_instruction(bytes: &mut [u8]) -> u32{
         ((bytes[0] as u32) << 24) | ((bytes[1] as u32) << 16) | ((bytes[2] as u32) << 8) | bytes[3] as u32
     }
+
+    fn get_64bit_instruction(bytes: &mut [u8]) -> u64{
+        ((bytes[0] as u64) << 56) | ((bytes[1] as u64) << 48) | ((bytes[2] as u64) << 40) | ((bytes[3] as u64) << 32) |
+            ((bytes[4] as u64) << 24) | ((bytes[5] as u64) << 16) | ((bytes[6] as u64) << 8) | bytes[7] as u64
+    }
     
+    // fn convert_from_rum(bytes: &mut [u8]) -> u64{
+    //     let old = Self::get_32bit_instruction(bytes) as u64;
+    //     let op = get_bits(old, 4, 28);
+    //     let ra = get_bits(old, 3, 6);
+    //     let rb = get_bits(old, 3, 3);
+    //     let rc= get_bits(old, 3, 0);
+    //     let rl= get_bits(old, 3, 25);
+    //     let lval = get_bits(old, 25, 0);
+    //     
+    //     let mut new = 0;
+    //     
+    //     if op as u64 != CPU_Opcode::LV as u64{
+    //         new = op << 58 | ra << 8 | rb << 4 | rc;
+    //     } 
+    //     else{
+    //         new = op << 58 | rl << 54 | lval;
+    //     }
+    //     println!("{:b}", old);
+    //     println!("{:b}", new);
+    //     
+    //     new
+    // }
+
     pub fn get_ram(&mut self) -> &mut RAM{
         self.ram.as_mut().unwrap()
     }
@@ -120,32 +151,40 @@ impl Machine{
         println!("BEEP!")
     }
     
+    pub fn add_sender(&mut self, sender: Sender<VideoOutWrapper>){
+        self.cpu.as_mut().unwrap().add_signaler(sender);
+    }
+    
     pub fn boot(&mut self, input: Option<&str>) {
         //self.gpu.unwrap().init(b1, a2);
         
         self.storage.push(HardDrive::from_file(input).unwrap());
-        let m = self.parts.as_ref().unwrap();
+        //let t = self.parts.as_ref().unwrap();
         
         // GPU
-        
-        // CPU
-        
-        let t = self.parts.as_ref().unwrap();
+        let m = self.parts.as_ref().unwrap();
         
         unsafe {
             // set up the instructions that will go into m[0]
             let size = self.storage[0].get_byte_length().clone();
             let mut prog = self.storage[0].load_segment(0, size);
-        
-            // make the original segment m[0]
+
+            // make the original segment m[0] for program
             (*m.cpu).lv_instruction(m, 0, (prog.len() / 4) as u32);
             (*m.cpu).instruction(m, CPU_Opcode::MapSeg, 0, 0, 0);
-        
+            
+            
+
+            // // make the original segment m[1] for video out
+            (*m.cpu).lv_instruction(m, 0, (100 * 100 * 3) as u32);
+            (*m.cpu).instruction(m, CPU_Opcode::MapSeg, 0, 0, 0);
+
+            //println!("Test1");
             // load the instructions into m[0]
             let mut i = 0;
             for bytes in prog.chunks_exact_mut(4) {
-                let word = Self::get_instruction(bytes);
-                (*t.ram).set(0, i, word as u64);
+                let word = Self::get_32bit_instruction(bytes);
+                (*m.ram).set(0, i, word as u64);
                 i += 1;
             };
 

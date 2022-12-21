@@ -42,4 +42,8 @@ impl RAM{
     pub fn set(&mut self, seg_id: usize, index: usize, value: u64){
         self.segments[seg_id][index] = value;
     }
+    
+    pub fn to_vec(&self, index: usize) -> Vec<u64>{
+        self.segments[index].clone()
+    }
 }

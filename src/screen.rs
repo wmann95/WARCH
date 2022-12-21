@@ -1,9 +1,11 @@
+use crossbeam::channel::Receiver;
 use rand::Rng;
 use rand::rngs::ThreadRng;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use sdl2::render::{WindowCanvas};
 use sdl2::Sdl;
+use crate::machine::VideoOutWrapper;
 // use winit::dpi::LogicalSize;
 // use winit::event_loop::EventLoop;
 // use winit::window::{Window, WindowBuilder};
@@ -22,14 +24,15 @@ pub struct Screen {
     height: u32,
     color_width: u64,
     clear_color: Color,
-    pixels: Vec<Vec<Rect>>,
+    pixels: Vec<Vec<(Rect, [u8; 3])>>,
     canvas: WindowCanvas,
     rng: ThreadRng,
+    receiver: Receiver<VideoOutWrapper>
 }
 
 
 impl Screen{
-    pub fn new(pixel_width: u32, pixel_height: u32, x_size: u32, y_size: u32, color_width: u64, sdl_context: &Sdl) -> Self{
+    pub fn new(pixel_width: u32, pixel_height: u32, x_size: u32, y_size: u32, color_width: u64, sdl_context: &Sdl, receiver: Receiver<VideoOutWrapper>) -> Self{
 
         let video_subsystem = sdl_context.video().unwrap();
 
@@ -59,7 +62,7 @@ impl Screen{
                     pixel_height
                 );
 
-                buffer.push(rect);
+                buffer.push((rect, [0,0,0]));
             }
             pixels.push(buffer);
         }
@@ -73,50 +76,92 @@ impl Screen{
             pixels,
             clear_color,
             canvas,
-            rng
+            rng,
+            receiver
         }
     }
 
-    // pub fn draw(&mut self, signal: &Option<GpuSignal>) {
-    //     self.canvas.set_draw_color(self.clear_color);
-    //     self.canvas.clear();
-    // 
-    //     match signal{
-    //         Some(s) => unsafe {
-    //             for y in 0..self.height as usize{
-    //                 for x in 0..self.width as usize{
-    //                     //println!("{} {}", x, y);
-    //                     
-    //                     self.canvas.set_draw_color(
-    //                         Color::RGB(
-    //                             (*s.signal).video_out[y][x][0],
-    //                             (*s.signal).video_out[y][x][1],
-    //                             (*s.signal).video_out[y][x][2],
-    //                         )
-    //                     );
-    //                     self.canvas.fill_rect(
-    //                         self.pixels[y][x]
-    //                     ).unwrap();
-    //                 }
-    //             }
-    //         }
-    //         None => { 
-    //             for y in 0..self.height as usize{
-    //                 for x in 0..self.width as usize{
-    //                     let red = self.rng.gen::<u8>();
-    //                     let green = self.rng.gen::<u8>();
-    //                     let blue = self.rng.gen::<u8>();
-    // 
-    //                     self.canvas.set_draw_color(Color::RGB(
-    //                         red, green, blue
-    //                     ));
-    //                     self.canvas.fill_rect(
-    //                         self.pixels[y][x]
-    //                     ).unwrap();
-    //                 } 
-    //             }
-    //         }
-    //     }
-    //     self.canvas.present();
-    // }
+    pub unsafe fn draw(&mut self) {
+        self.canvas.set_draw_color(self.clear_color);
+        self.canvas.clear();
+        
+        if self.receiver.len() > 0 {
+            
+            //println!("Debug1");
+            
+            let pixels = self.receiver.iter().nth(0).unwrap().data;
+
+            //println!("Debug2");
+            //println!("{}", pixels.len());
+            
+            if (*pixels).len() == self.pixels.len() * self.pixels[0].len() * 3 {
+
+                //println!("{}", (*pixels).len());
+                for mut pixel in (0..(*pixels).len()).step_by(3){
+                    //println!("{}", pixel);
+                    let x = (pixel / 3) % (self.pixels[0].len());
+                    let y = (pixel / 3) / (self.pixels[0].len());
+
+                    //println!("{pixel}");
+                    self.pixels[y][x].1 = [(*pixels)[pixel] as u8, (*pixels)[pixel + 1] as u8, (*pixels)[pixel + 2] as u8];
+                    
+                }
+            }
+            else{
+                for y in 0..self.height as usize{
+                    for x in 0..self.width as usize{
+                        let red = self.rng.gen::<u8>();
+                        let green = self.rng.gen::<u8>();
+                        let blue = self.rng.gen::<u8>();
+                
+                        self.pixels[y][x].1 = [red, green, blue];
+                    }
+                }
+            }
+            
+        }
+
+        for y in 0..self.height as usize{
+            for x in 0..self.width as usize{
+                //println!("{} {}", x, y);
+                
+                self.canvas.set_draw_color(
+                    Color::RGB(
+                        self.pixels[y][x].1[0],
+                        self.pixels[y][x].1[1],
+                        self.pixels[y][x].1[2],
+                    )
+                );
+                self.canvas.fill_rect(
+                    self.pixels[y][x].0
+                ).unwrap();
+            }
+        }
+
+        // 
+        // match signal{
+        //     Some(s) => unsafe {
+        //         for y in 0..self.height as usize{
+        //             for x in 0..self.width as usize{
+        //                 //println!("{} {}", x, y);
+        //                 
+        //                 self.canvas.set_draw_color(
+        //                     Color::RGB(
+        //                         (*s.signal).video_out[y][x][0],
+        //                         (*s.signal).video_out[y][x][1],
+        //                         (*s.signal).video_out[y][x][2],
+        //                     )
+        //                 );
+        //                 self.canvas.fill_rect(
+        //                     self.pixels[y][x]
+        //                 ).unwrap();
+        //             }
+        //         }
+        //     }
+        //     None => { 
+        //         
+        //     }
+        // }
+        self.canvas.present();
+    }
 }

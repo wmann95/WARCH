@@ -2,11 +2,11 @@ use std::io::{Read, stdin};
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread::sleep;
 use std::time::Duration;
-use crate::machine::{Machine};
+use crate::machine::{Machine, MachineWrapper};
 use crate::ram::RAM;
 
 #[derive(Copy, Clone, Debug)]
-pub enum GpuOpcode { 
+pub enum GPU_Opcode { 
     NOP,
     Clear, // Clear screen display
     MovC, // Move cursor to r[b], r[c]
@@ -22,17 +22,43 @@ pub enum GpuOpcode {
     Mul, // r[a] = r[b] * r[c]
     Div, // r[a] = r[b] / r[c]
     NAND, //r[a] = ~(r[b] & r[c])
-    MovI // r[l] = lv
+    MovI, // r[l] = lv
+    INVALID
+}
+
+pub fn get_opcode(code: u32) -> GPU_Opcode {
+    match code{
+        0 => { GPU_Opcode::NOP },
+        1 => { GPU_Opcode::Clear },
+        2 => { GPU_Opcode::MovC },
+        3 => { GPU_Opcode::Print },
+        4 => { GPU_Opcode::Jump },
+        5 => { GPU_Opcode::Run },
+        6 => { GPU_Opcode::MapSeg },
+        7 => { GPU_Opcode::UMapSeg },
+        8 => { GPU_Opcode::Load },
+        9 => { GPU_Opcode::Store },
+        10 => { GPU_Opcode::CMov },
+        11=> { GPU_Opcode::Add },
+        12 => { GPU_Opcode::Mul },
+        13 => { GPU_Opcode::Div },
+        14 => { GPU_Opcode::NAND },
+        15 => { GPU_Opcode::MovI },
+        _ => {
+            GPU_Opcode::INVALID
+        }
+    }
 }
 
 pub struct GPU{
-    pub video_out: Vec<Vec<[u8; 3]>>,
     clock_speed: u64,
     register_width: usize,
     registers: Vec<u64>,
     program_counter: u64,
     stack: Vec<u64>,
-    signalers: Vec<Receiver<u128>>,
+    senders: Vec<Sender<Vec<[u8; 3]>>>,
+    x_size: usize,
+    y_size: usize,
     dd_ram: RAM // Display Data RAM
 }
 
@@ -52,18 +78,18 @@ impl GPU{
     pub fn new(clock_speed: u64, register_width: usize, register_count: usize, x_res: usize, y_res: usize) -> Self{
         let registers = vec![0u64; register_count];
         let stack: Vec<u64> = Vec::new();
-        let video_out = vec![vec![[0_u8; 3]; x_res]; y_res];
         let dd_ram = RAM::new();
 
         GPU{
-            video_out,
             clock_speed,
             register_width,
             registers,
             stack,
             program_counter: 0,
-            signalers: Vec::new(),
-            dd_ram
+            senders: Vec::new(),
+            dd_ram,
+            x_size: x_res,
+            y_size: y_res
         }
     }
     
@@ -81,23 +107,49 @@ impl GPU{
     //         }
     //     }
     // }
+    
+    pub fn add_signaler(&mut self, sender: Sender<Vec<[u8; 3]>>) {
+        self.senders.push(sender);
+    }
+    
+    pub unsafe fn run(&mut self){
+
+        
+        self.dd_ram.request_segment(self.x_size * self.y_size); // segment 0 display data
+
+        let delta_max = 1000000000_u128 / (self.clock_speed as u128);
+
+        let mut clock = quanta::Clock::new();
+        let mut timer = clock.raw();
+
+        self.program_counter = 0;
+        'run: loop{
+            let delta = clock.raw() - timer;
+
+            if delta > delta_max as u64 {
+
+                for sender in self.senders.iter(){
+                    let c = self.dd_ram.to_vec(1);
+                    let b: Vec<&[u64]> = c.chunks_exact(3).collect();
+
+                    let mut buffer: Vec<[u8; 3]> = Vec::new();
+
+                    for i in 0..b.len(){
+                        let x = [b[i][0] as u8, b[i][1] as u8, b[i][2] as u8];
+                        buffer.push(x);
+                    }
+
+                    sender.send(buffer).unwrap();
+                }
+
+                timer = clock.raw();
+            }
+
+        }
+    }
     // 
-    // pub fn add_signaler(&mut self, r: Receiver<u128>) {
-    //     self.signalers.push(r);
-    // }
-    // 
-    // pub fn run(&mut self, pc: u64){
-    //     self.program_counter = pc;
-    //     let instruction = self.ddram.get(0, self.program_counter as usize);
-    //     //let instruction = machine.as_mut().unwrap().get_ram().get(0, self.program_counter as usize);
-    // 
-    //     self.compute(instruction as u32);
-    // 
-    //     sleep(Duration::from_millis(1000/self.clock_speed));
-    // }
-    // 
-    // pub fn build_instruction(&self, op: GpuOpcode, ra: usize, rb: usize, rc: usize) -> u32{
-    //     if op as u32 > GpuOpcode::LV as u32 ||
+    // pub fn build_instruction(&self, op: GPU_Opcode, ra: usize, rb: usize, rc: usize) -> u32{
+    //     if op as u32 > GPU_Opcode::LV as u32 ||
     //         ra >= self.registers.len() ||
     //         rb >= self.registers.len() ||
     //         rc >= self.registers.len()
@@ -107,7 +159,7 @@ impl GPU{
     //     ((op as u32) << 28) | (ra << 6) as u32 | (rb << 3) as u32 | rc as u32
     // }
     // 
-    // pub fn instruction(&mut self, op: GpuOpcode, ra: usize, rb: usize, rc: usize){
+    // pub fn instruction(&mut self, op: GPU_Opcode, ra: usize, rb: usize, rc: usize){
     //     let inst = self.build_instruction(op, ra, rb, rc);
     //     self.compute(inst);
     // }
@@ -116,7 +168,7 @@ impl GPU{
     //     if !check_fits(lv as u64, 25){
     //         panic!("value won't fit into 25 bits!")
     //     }
-    //     ((GpuOpcode::LV as u32) << 28) | (rl << 25) as u32 | (lv) as u32
+    //     ((GPU_Opcode::LV as u32) << 28) | (rl << 25) as u32 | (lv) as u32
     // }
     // 
     // pub fn lv_instruction(&mut self, rl: usize, lv: u32){
@@ -134,10 +186,10 @@ impl GPU{
     // 
     //     //println!("{:x}", instruction);
     // 
-    //     if op == GpuOpcode::LV as u32 {
+    //     if op == GPU_Opcode::LV as u32 {
     //         format!("{:?} {} {}", get_opcode(op), rl, lval)
     //     }
-    //     else if op != GpuOpcode::INVALID as u32{
+    //     else if op != GPU_Opcode::INVALID as u32{
     //         format!("{:?} {} {} {}", get_opcode(op), ra, rb, rc)
     //     }
     //     else{
@@ -155,37 +207,37 @@ impl GPU{
     // 
     //     match op{
     //         opcode =>{
-    //             if opcode == GpuOpcode::CMov as u32{
+    //             if opcode == GPU_Opcode::CMov as u32{
     //                 self.cmov(ra, rb, rc);
     //             }
-    //             else if opcode == GpuOpcode::Load as u32{
+    //             else if opcode == GPU_Opcode::Load as u32{
     //                 self.load(ra, rb, rc);
     //             }
-    //             else if opcode == GpuOpcode::Store as u32{
+    //             else if opcode == GPU_Opcode::Store as u32{
     //                 self.store(ra, rb, rc);
     //             }
-    //             else if opcode == GpuOpcode::Add as u32{
+    //             else if opcode == GPU_Opcode::Add as u32{
     //                 self.add(ra, rb, rc);
     //             }
-    //             else if opcode == GpuOpcode::Mul as u32{
+    //             else if opcode == GPU_Opcode::Mul as u32{
     //                 self.mul(ra, rb, rc);
     //             }
-    //             else if opcode == GpuOpcode::Div as u32{
+    //             else if opcode == GPU_Opcode::Div as u32{
     //                 self.div(ra, rb, rc);
     //             }
-    //             else if opcode == GpuOpcode::NAND as u32{
+    //             else if opcode == GPU_Opcode::NAND as u32{
     //                 self.nand(ra, rb, rc);
     //             }
-    //             else if opcode == GpuOpcode::MapSeg as u32{
+    //             else if opcode == GPU_Opcode::MapSeg as u32{
     //                 self.map_seg(rb, rc);
     //             }
-    //             else if opcode == GpuOpcode::UnmapSeg as u32{
+    //             else if opcode == GPU_Opcode::UMapSeg as u32{
     //                 self.unmap_seg(rc);
     //             }
-    //             else if opcode == GpuOpcode::LP as u32{
+    //             else if opcode == GPU_Opcode::Run as u32{
     //                 self.load_program(rb, rc);
     //             }
-    //             else if opcode == GpuOpcode::LV as u32{
+    //             else if opcode == GPU_Opcode::MovI as u32{
     //                 self.load_val(rl, lval as u64);
     //             }
     //             else{
